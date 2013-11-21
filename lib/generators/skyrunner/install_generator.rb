@@ -1,6 +1,6 @@
 require 'rails/generators'
 
-module Gemname
+module SkyRunner
   class InstallGenerator < Rails::Generators::Base
     desc "Generator for SkyRunner configuration files."
 
