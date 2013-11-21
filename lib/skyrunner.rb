@@ -62,111 +62,119 @@ module SkyRunner
   end
 
   def self.consume!(&block)
-    queue = sqs_queue
-    table = dynamo_db_table
-    raise "Queue #{SkyRunner::sqs_queue_name} not found. Try running 'skyrunner init'" unless queue
-    raise "DynamoDB table #{SkyRunner::dynamo_db_table_name} not found. Try running 'skyrunner init'" unless table && table.exists?
+    raise "Queue #{SkyRunner::sqs_queue_name} not found. Try running 'skyrunner init'" unless sqs_queue
+    raise "DynamoDB table #{SkyRunner::dynamo_db_table_name} not found. Try running 'skyrunner init'" unless dynamo_db_table && dynamo_db_table.exists?
 
     local_queue = Queue.new
-    error_queue = Queue.new
 
     threads = []
 
-    1.upto(SkyRunner::num_threads) do
+    1.upto((SkyRunner::num_threads / 2.0).floor) do
       threads << Thread.new do
         table = SkyRunner::dynamo_db_table
 
         loop do
-          break if SkyRunner::stop_consuming? && local_queue.empty?
+          begin
+            break if SkyRunner::stop_consuming? && local_queue.empty?
 
-          sleep 1 unless local_queue.size > 0
+            sleep 1 unless local_queue.size > 0
 
-          klass, job_id, task_id, task_args, message = local_queue.pop
+            break if SkyRunner::stop_consuming? && local_queue.empty?
 
-          if klass
-            begin
-              # Avoid running the same task twice, enter record and raise error if exists already.
-              table.items.put({ id: "#{job_id}-tasks", task_id: task_id }, unless_exists: ["id", "task_id"])
+            klass, job_id, task_id, task_args, message = local_queue.pop
 
-              SkyRunner::log :info, "Run Task: #{task_args} Job: #{job_id} Message: #{message.id}"
-
-              job = klass.new
-              job.skyrunner_job_id = job_id
-
+            if klass
               begin
-                job.consume!(task_args)
-                message.delete
-              rescue Exception => e
+                # Avoid running the same task twice, enter record and raise error if exists already.
+                table.items.put({ id: "#{job_id}-tasks", task_id: task_id }, unless_exists: ["id", "task_id"])
+
+                SkyRunner::log :info, "Run Task: #{task_args} Job: #{job_id} Message: #{message.id}"
+
+                job = klass.new
+                job.skyrunner_job_id = job_id
+
+                begin
+                  job.consume!(task_args)
+                  message.delete
+                rescue Exception => e
+                  message.delete rescue nil
+                  block.call(e) if block_given?
+                  SkyRunner::log :error, "Task Failed: #{task_args} Job: #{job_id} #{e.message} #{e.backtrace.join("\n")}"
+                end
+              rescue AWS::DynamoDB::Errors::ConditionalCheckFailedException => e
                 message.delete rescue nil
-                error_queue.push(e)
-                SkyRunner::log :error, "Task Failed: #{task_args} Job: #{job_id} #{e.message} #{e.backtrace.join("\n")}"
               end
-            rescue AWS::DynamoDB::Errors::ConditionalCheckFailedException => e
-              puts "Already exists"
-              message.delete rescue nil
+            end
+          rescue Exception => e
+            puts e.message
+            puts e.backtrace.join("\n")
+            raise e
+          end
+        end
+      end
+
+      threads << Thread.new do
+        begin
+          loop do
+            table = SkyRunner::dynamo_db_table
+            queue = sqs_queue
+
+            break if SkyRunner::stop_consuming?
+
+            puts "queue size #{local_queue.size}"
+
+            sleep 1 while local_queue.size >= SkyRunner.num_threads
+
+            received_messages = []
+
+            batch_size = [1, [SkyRunner.consumer_batch_size, SQS_MAX_BATCH_SIZE].min].max
+
+            queue.receive_messages(limit: batch_size, wait_time_seconds: 5) do |message|
+              received_messages << [message, JSON.parse(message.body)]
+            end
+
+            next unless received_messages.size > 0
+
+            job_ids = received_messages.map { |m| [m[1]["job_id"], m[1]["job_id"]] }.uniq
+
+            job_records = {}
+
+            # Read DynamoDB records into job and task lookup tables.
+            table.batch_get(["id", "task_id", "failed"], job_ids.uniq, consistent_read: true) do |record|
+              job_records[record["id"]] = record
+            end
+
+            received_messages.each do |received_message|
+              message, message_data = received_message
+              job_id = message_data["job_id"]
+              task_id = message_data["task_id"]
+
+              job_record = job_records[job_id]
+
+              if job_record && job_record["failed"] == 0
+                begin
+                  klass = Kernel.const_get(message_data["job_class"])
+                  task_args = message_data["task_args"]
+                  local_queue.push([klass, job_id, task_id, task_args, message])
+                rescue NameError => e
+                  block.call(e) if block_given?
+                  message.delete rescue nil
+                  log :error, "Task Failed: No such class #{message_data["job_class"]} #{e.message}"
+                end
+              else
+                message.delete rescue nil
+              end
             end
           end
+        rescue Exception => e
+          puts e.message
+          puts e.backtrace.join("\n")
+          raise e
         end
       end
     end
 
     log :info, "Consumer started."
-
-    loop do
-      if error_queue.size > 0
-        SkyRunner::stop_consuming!
-
-        while error_queue.size > 0
-          error = error_queue.pop
-          yield error if block_given?
-        end
-      end
-
-      return true if stop_consuming?
-
-      sleep 1 while local_queue.size >= SkyRunner.num_threads
-
-      received_messages = []
-
-      batch_size = [1, [SkyRunner.consumer_batch_size, SQS_MAX_BATCH_SIZE].min].max
-
-      queue.receive_messages(limit: batch_size, wait_time_seconds: 5) do |message|
-        received_messages << [message, JSON.parse(message.body)]
-      end
-
-      next unless received_messages.size > 0
-
-      job_ids = received_messages.map { |m| [m[1]["job_id"], m[1]["job_id"]] }.uniq
-
-      job_records = {}
-
-      # Read DynamoDB records into job and task lookup tables.
-      table.batch_get(["id", "task_id", "failed"], job_ids.uniq, consistent_read: true) do |record|
-        job_records[record["id"]] = record
-      end
-
-      received_messages.each do |received_message|
-        message, message_data = received_message
-        job_id = message_data["job_id"]
-        job_record = job_records[job_id]
-        puts job_record.inspect
-
-        if job_record && job_record["failed"] == 0 && error_queue.empty?
-          begin
-            klass = Kernel.const_get(message_data["job_class"])
-            task_args = message_data["task_args"]
-            local_queue.push([klass, job_id, task_id, task_args, message])
-          rescue NameError => e
-            message.delete rescue nil
-            log :error, "Task Failed: No such class #{message_data["job_class"]} #{e.message}"
-            yield e if block_given?
-          end
-        else
-          message.delete rescue nil
-        end
-      end
-
-    end
 
     threads.each(&:join)
 
