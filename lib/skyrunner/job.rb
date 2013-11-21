@@ -34,7 +34,11 @@ module SkyRunner::Job
     table = SkyRunner.dynamo_db_table
     queue = SkyRunner.sqs_queue
 
-    record = table.items.put(id: job_id, task_id: job_id, class: self.class.name, args: args.to_json, total_tasks: 1, completed_tasks: 0, done: 0, failed: 0)
+    record = nil
+
+    SkyRunner::retry_dynamo_db do
+      record = table.items.put(id: job_id, task_id: job_id, class: self.class.name, args: args.to_json, total_tasks: 1, completed_tasks: 0, done: 0, failed: 0)
+    end
 
     pending_args = []
 
@@ -57,7 +61,9 @@ module SkyRunner::Job
         end
       end
 
-      record.attributes.add({ total_tasks: messages.size - dropped_message_count })
+      SkyRunner::retry_dynamo_db do
+        record.attributes.add({ total_tasks: messages.size - dropped_message_count })
+      end
     end
 
     self.run(args) do |*task_args|
@@ -102,7 +108,10 @@ module SkyRunner::Job
 
     begin
       record = dynamo_db_record
-      record.attributes.add({ failed: 1 })
+
+      SkyRunner::retry_dynamo_db do
+        record.attributes.add({ failed: 1 })
+      end
 
       (self.class.job_event_methods[:failed] || []).each do |method|
         if self.method(method).arity == 0 && self.method(method).parameters.size == 0
@@ -121,15 +130,20 @@ module SkyRunner::Job
     return false unless self.skyrunner_job_id
 
     record = dynamo_db_record
+    new_attributes = nil
 
-    new_attributes = record.attributes.add({ completed_tasks: 1 }, return: :all_new)
+    SkyRunner::retry_dynamo_db do
+      new_attributes = record.attributes.add({ completed_tasks: 1 }, return: :all_new)
+    end
 
     if new_attributes["total_tasks"] == new_attributes["completed_tasks"]
       begin
         if_condition = { completed_tasks: new_attributes["total_tasks"], done: 0 }
 
-        record.attributes.update(if: if_condition) do |u|
-          u.add(done: 1)
+        SkyRunner::retry_dynamo_db do
+          record.attributes.update(if: if_condition) do |u|
+            u.add(done: 1)
+          end
         end
 
         (self.class.job_event_methods[:completed] || []).each do |method|
@@ -139,24 +153,23 @@ module SkyRunner::Job
             self.send(method, JSON.parse(record.attributes["args"]).symbolize_keys)
           end
         end
+
+        delete_task_records! rescue nil
       rescue AWS::DynamoDB::Errors::ConditionalCheckFailedException => e
         # This is OK, we had a double finisher so lets block them.
       end
     end
 
-    delete_task_records! rescue nil
-
     true
   end
 
   def delete_task_records!
-    # Delete task items
     delete_batch_queue = Queue.new
     mutex = Mutex.new
     delete_items_queued = false
     threads = []
 
-    1.upto(SkyRunner.num_threads) do 
+    1.upto([1, (SkyRunner.consumer_threads / 4.0).floor].max) do 
       threads << Thread.new do
 
         db_table = SkyRunner.dynamo_db_table
@@ -170,10 +183,14 @@ module SkyRunner::Job
 
           break if should_break
 
-          batch = delete_batch_queue.pop
+          if delete_batch_queue.size > 0
+            batch = delete_batch_queue.pop
 
-          if batch
-            db_table.batch_delete(batch)
+            if batch
+              SkyRunner::retry_dynamo_db do
+                db_table.batch_delete(batch)
+              end
+            end
           else
             sleep 1
           end

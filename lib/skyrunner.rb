@@ -5,6 +5,7 @@ require "active_support/core_ext"
 require "log4r"
 require "json"
 require "set"
+require "retries"
 
 module SkyRunner
   require "skyrunner/engine" if defined?(Rails)
@@ -69,24 +70,28 @@ module SkyRunner
 
     threads = []
 
-    1.upto((SkyRunner::num_threads / 2.0).floor) do
+    1.upto(SkyRunner::consumer_threads) do
       threads << Thread.new do
         table = SkyRunner::dynamo_db_table
 
         loop do
           begin
-            break if SkyRunner::stop_consuming? && local_queue.empty?
+            if local_queue.empty?
+              break if SkyRunner::stop_consuming?
 
-            sleep 1 unless local_queue.size > 0
-
-            break if SkyRunner::stop_consuming? && local_queue.empty?
+              sleep 1
+              next
+            end
 
             klass, job_id, task_id, task_args, message = local_queue.pop
 
             if klass
               begin
                 # Avoid running the same task twice, enter record and raise error if exists already.
-                table.items.put({ id: "#{job_id}-tasks", task_id: task_id }, unless_exists: ["id", "task_id"])
+
+                SkyRunner::retry_dynamo_db do
+                  table.items.put({ id: "#{job_id}-tasks", task_id: task_id }, unless_exists: ["id", "task_id"])
+                end
 
                 SkyRunner::log :info, "Run Task: #{task_args} Job: #{job_id} Message: #{message.id}"
 
@@ -112,7 +117,9 @@ module SkyRunner
           end
         end
       end
+    end
 
+    1.upto((SkyRunner::consumer_threads.to_f / SQS_MAX_BATCH_SIZE).ceil + 1) do
       threads << Thread.new do
         begin
           loop do
@@ -121,15 +128,11 @@ module SkyRunner
 
             break if SkyRunner::stop_consuming?
 
-            puts "queue size #{local_queue.size}"
-
-            sleep 1 while local_queue.size >= SkyRunner.num_threads
+            sleep 1 while local_queue.size >= SkyRunner.consumer_threads
 
             received_messages = []
 
-            batch_size = [1, [SkyRunner.consumer_batch_size, SQS_MAX_BATCH_SIZE].min].max
-
-            queue.receive_messages(limit: batch_size, wait_time_seconds: 5) do |message|
+            queue.receive_messages(limit: SQS_MAX_BATCH_SIZE, wait_time_seconds: 5) do |message|
               received_messages << [message, JSON.parse(message.body)]
             end
 
@@ -139,9 +142,11 @@ module SkyRunner
 
             job_records = {}
 
-            # Read DynamoDB records into job and task lookup tables.
-            table.batch_get(["id", "task_id", "failed"], job_ids.uniq, consistent_read: true) do |record|
-              job_records[record["id"]] = record
+            SkyRunner::retry_dynamo_db do
+              # Read DynamoDB records into job and task lookup tables.
+              table.batch_get(["id", "task_id", "failed"], job_ids.uniq, consistent_read: true) do |record|
+                job_records[record["id"]] = record
+              end
             end
 
             received_messages.each do |received_message|
@@ -217,14 +222,11 @@ module SkyRunner
   mattr_accessor :sqs_message_retention_period
   @@sqs_message_retention_period = 345600
 
-  mattr_accessor :consumer_batch_size
-  @@consumer_batch_size = 10
-
   mattr_accessor :logger
   @@logger = Log4r::Logger.new("skyrunner")
 
-  mattr_accessor :num_threads
-  @@num_threads = 10
+  mattr_accessor :consumer_threads
+  @@consumer_threads = 10
 
   mattr_accessor :stop_consuming_flag
 
@@ -243,6 +245,18 @@ module SkyRunner
       @@stop_consuming_mutex.synchronize do
         SkyRunner::stop_consuming_flag = true
       end
+    end
+  end
+
+  def self.retry_dynamo_db(&block)
+    handler = Proc.new do |exception, num, delay|
+      if exception
+        SkyRunner.log :warn, "Having to retry DynamoDB requests. #{exception.message}"
+      end
+    end
+
+    with_retries(handler: handler, max_tries: 100, rescue: AWS::DynamoDB::Errors::ProvisionedThroughputExceededException, base_sleep_seconds: 2, max_sleep_seconds: 60) do
+      block.call
     end
   end
 

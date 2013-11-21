@@ -24,7 +24,6 @@ module ExampleJobModule
     end
 
     def print_number(task_number: nil)
-      sleep 0.2
       puts "Ran task #{task_number}"
     end
 
