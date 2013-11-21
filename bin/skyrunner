@@ -1,0 +1,22 @@
+#!/usr/bin/env ruby
+
+$: << File.dirname(__FILE__) + "/../lib"
+
+require "skyrunner"
+
+require "./jobs/example_job"
+
+logger = Log4r::Logger.new("sky")
+logger.outputters << Log4r::StdoutOutputter.new("out")
+logger.level = Log4r::DEBUG
+
+SkyRunner.logger = logger
+
+SkyRunner.setup do |config|
+  config.dynamodb_table = "skyrunner_jobs_development"
+  config.sqs_queue = "skyrunner_tasks_development"
+end
+
+SkyRunner.init!
+
+j = ExampleJob.new

@@ -1,4 +1,5 @@
 source 'https://rubygems.org'
 
 gem "aws-sdk"
-gem "open4"
+gem "activesupport"
+gem "log4r"
