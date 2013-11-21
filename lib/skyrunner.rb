@@ -74,22 +74,25 @@ module SkyRunner
     1.upto(SkyRunner::num_threads) do
       threads << Thread.new do
         loop do
-          break if SkyRunner::stop_consuming?
+          break if SkyRunner::stop_consuming? && local_queue.size == 0
+
           sleep 1 unless local_queue.size > 0
 
           klass, job_id, task_args, message = local_queue.pop
 
-          SkyRunner::log :info, "Run Task: #{task_args} Job: #{job_id} Message: #{message.id}"
+          if klass
+            SkyRunner::log :info, "Run Task: #{task_args} Job: #{job_id} Message: #{message.id}"
 
-          job = klass.new
-          job.skyrunner_job_id = job_id
+            job = klass.new
+            job.skyrunner_job_id = job_id
 
-          begin
-            job.consume!(task_args)
-            message.delete
-          rescue Exception => e
-            error_queue.push(e)
-            SkyRunner::log :error, "Task Failed: #{task_args} Job: #{job_id} #{e.message} #{e.backtrace.join("\n")}"
+            begin
+              job.consume!(task_args)
+              message.delete
+            rescue Exception => e
+              error_queue.push(e)
+              SkyRunner::log :error, "Task Failed: #{task_args} Job: #{job_id} #{e.message} #{e.backtrace.join("\n")}"
+            end
           end
         end
       end
