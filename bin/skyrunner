@@ -57,6 +57,6 @@ when "consume"
 when "test"
   $: << "."
   require "#{File.dirname(__FILE__)}/../jobs/example_job"
-  ExampleJobModule::ExampleJob.new.execute!(number_of_tasks: 100)
+  ExampleJobModule::ExampleJob.new.execute!(number_of_tasks: 500)
   SkyRunner.consume!
 end

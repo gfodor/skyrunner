@@ -33,7 +33,8 @@ module SkyRunner
       table = dynamo_db.tables.create(table_name, 
                                      SkyRunner.dynamo_db_read_capacity, 
                                      SkyRunner.dynamo_db_write_capacity,
-                                     hash_key: { job_id: :string })
+                                     hash_key: { id: :string },
+                                     range_key: { task_id: :string })
 
       sleep 1 while table.status == :creating
     end
@@ -73,26 +74,36 @@ module SkyRunner
 
     1.upto(SkyRunner::num_threads) do
       threads << Thread.new do
+        table = SkyRunner::dynamo_db_table
+
         loop do
           break if SkyRunner::stop_consuming? && local_queue.empty?
 
           sleep 1 unless local_queue.size > 0
 
-          klass, job_id, task_args, message = local_queue.pop
+          klass, job_id, task_id, task_args, message = local_queue.pop
 
           if klass
-            SkyRunner::log :info, "Run Task: #{task_args} Job: #{job_id} Message: #{message.id}"
-
-            job = klass.new
-            job.skyrunner_job_id = job_id
-
             begin
-              job.consume!(task_args)
-              message.delete
-            rescue Exception => e
+              # Avoid running the same task twice, enter record and raise error if exists already.
+              table.items.put({ id: "#{job_id}-tasks", task_id: task_id }, unless_exists: ["id", "task_id"])
+
+              SkyRunner::log :info, "Run Task: #{task_args} Job: #{job_id} Message: #{message.id}"
+
+              job = klass.new
+              job.skyrunner_job_id = job_id
+
+              begin
+                job.consume!(task_args)
+                message.delete
+              rescue Exception => e
+                message.delete rescue nil
+                error_queue.push(e)
+                SkyRunner::log :error, "Task Failed: #{task_args} Job: #{job_id} #{e.message} #{e.backtrace.join("\n")}"
+              end
+            rescue AWS::DynamoDB::Errors::ConditionalCheckFailedException => e
+              puts "Already exists"
               message.delete rescue nil
-              error_queue.push(e)
-              SkyRunner::log :error, "Task Failed: #{task_args} Job: #{job_id} #{e.message} #{e.backtrace.join("\n")}"
             end
           end
         end
@@ -125,26 +136,36 @@ module SkyRunner
 
       next unless received_messages.size > 0
 
-      table.batch_get(:all, received_messages.map { |m| m[1]["job_id"] }.uniq, consistent_read: true) do |record|
-        received_messages.select { |m| m[1]["job_id"] == record["job_id"] }.each do |received_message|
-          message, message_data = received_message
-          job_id = message_data["job_id"]
+      job_ids = received_messages.map { |m| [m[1]["job_id"], m[1]["job_id"]] }.uniq
 
-          if record["failed"] == 0 && error_queue.empty?
-            begin
-              klass = Kernel.const_get(record["class"])
-              task_args = message_data["task_args"]
-              local_queue.push([klass, job_id, task_args, message])
-            rescue NameError => e
-              message.delete rescue nil
-              log :error, "Task Failed: No such class #{record["class"]} #{e.message}"
-              yield e if block_given?
-            end
-          else
-            message.delete
+      job_records = {}
+
+      # Read DynamoDB records into job and task lookup tables.
+      table.batch_get(["id", "task_id", "failed"], job_ids.uniq, consistent_read: true) do |record|
+        job_records[record["id"]] = record
+      end
+
+      received_messages.each do |received_message|
+        message, message_data = received_message
+        job_id = message_data["job_id"]
+        job_record = job_records[job_id]
+        puts job_record.inspect
+
+        if job_record && job_record["failed"] == 0 && error_queue.empty?
+          begin
+            klass = Kernel.const_get(message_data["job_class"])
+            task_args = message_data["task_args"]
+            local_queue.push([klass, job_id, task_id, task_args, message])
+          rescue NameError => e
+            message.delete rescue nil
+            log :error, "Task Failed: No such class #{message_data["job_class"]} #{e.message}"
+            yield e if block_given?
           end
+        else
+          message.delete rescue nil
         end
       end
+
     end
 
     threads.each(&:join)

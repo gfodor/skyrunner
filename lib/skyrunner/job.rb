@@ -34,13 +34,13 @@ module SkyRunner::Job
     table = SkyRunner.dynamo_db_table
     queue = SkyRunner.sqs_queue
 
-    record = table.items.put(job_id: job_id, class: self.class.name, args: args.to_json, total_tasks: 1, completed_tasks: 0, done: 0, failed: 0)
+    record = table.items.put(id: job_id, task_id: job_id, class: self.class.name, args: args.to_json, total_tasks: 1, completed_tasks: 0, done: 0, failed: 0)
 
     pending_args = []
 
     flush = lambda do
       messages = pending_args.map do |task_args|
-        { job_id: job_id, task_id: SecureRandom.hex, task_args: task_args }.to_json
+        { job_id: job_id, task_id: SecureRandom.hex, task_args: task_args, job_class: self.class.name }.to_json
       end
 
       dropped_message_count = 0
@@ -94,7 +94,7 @@ module SkyRunner::Job
   private 
 
   def dynamo_db_record
-    SkyRunner.dynamo_db_table.items[self.skyrunner_job_id]
+    SkyRunner.dynamo_db_table.items[self.skyrunner_job_id, self.skyrunner_job_id]
   end
 
   def handle_task_failed!
@@ -129,6 +129,20 @@ module SkyRunner::Job
         record.attributes.update(if: if_condition) do |u|
           u.add(done: 1)
         end
+
+        items_to_delete = []
+        table = SkyRunner.dynamo_db_table
+
+        table.items.query(hash_value: "#{record.attributes["id"]}-tasks") do |task_item|
+          items_to_delete << [task_item.attributes["id"], task_item.attributes["task_id"]]
+
+          if items_to_delete.size >= 25
+            table.batch_delete(items_to_delete)
+            items_to_delete.clear
+          end
+        end
+
+        table.batch_delete(items_to_delete) unless items_to_delete.empty?
 
         (self.class.job_event_methods[:completed] || []).each do |method|
           if self.method(method).arity == 0 && self.method(method).parameters.size == 0
