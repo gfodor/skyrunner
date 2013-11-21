@@ -83,11 +83,7 @@ module SkyRunner
       failed = false
 
       table.batch_get(:all, received_messages.map { |m| m[1]["job_id"] }.uniq, consistent_read: true) do |record|
-        break if stop_consuming
-
         received_messages.select { |m| m[1]["job_id"] == record["job_id"] }.each_with_index do |received_message|
-          break if stop_consuming
-
           message = received_message[1]
           job_id = message["job_id"]
 
