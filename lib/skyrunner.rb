@@ -6,7 +6,7 @@ require "json"
 require "set"
 
 module SkyRunner
-  SQS_BATCH_SIZE = 10 # Constant defined by AWS
+  SQS_MAX_BATCH_SIZE = 10 # Constant defined by AWS
 
   def self.setup
     yield self
@@ -66,7 +66,7 @@ module SkyRunner
     loop do
       received_messages = []
 
-      queue.receive_messages(limit: 10, wait_time_seconds: 15) do |message|
+      queue.receive_messages(limit: [1, [SkyRunner.consumer_batch_size, SQS_MAX_BATCH_SIZE].min].max, wait_time_seconds: 15) do |message|
         received_messages << [message, JSON.parse(message.body)]
       end
 
@@ -150,6 +150,9 @@ module SkyRunner
 
   mattr_accessor :job_namespace
   @@job_namespace = "default"
+
+  mattr_accessor :consumer_batch_size
+  @@consumer_batch_size = 10
 
   mattr_accessor :logger
   @@logger = Log4r::Logger.new("skyrunner")

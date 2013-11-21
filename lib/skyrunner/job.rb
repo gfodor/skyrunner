@@ -63,7 +63,7 @@ module SkyRunner::Job
     self.run(args) do |*task_args|
       pending_args << task_args
 
-      if pending_args.size >= SkyRunner::SQS_BATCH_SIZE
+      if pending_args.size >= SkyRunner::SQS_MAX_BATCH_SIZE
         1.upto(5) do
           flush.()
           sleep 5 if pending_args.size > 0
