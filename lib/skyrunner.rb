@@ -74,7 +74,7 @@ module SkyRunner
 
       received_messages = []
 
-      queue.receive_messages(limit: [1, [SkyRunner.consumer_batch_size, SQS_MAX_BATCH_SIZE].min].max, wait_time_seconds: 15) do |message|
+      queue.receive_messages(limit: [1, [SkyRunner.consumer_batch_size, SQS_MAX_BATCH_SIZE].min].max, wait_time_seconds: 5) do |message|
         received_messages << [message, JSON.parse(message.body)]
       end
 
