@@ -6,6 +6,14 @@ namespace :skyrunner do
 
   desc "Starts consuming SkyRunner tasks."
   task consume: :environment do
+    trap("INT") do
+      SkyRunner.stop_consuming!
+    end
+
+    trap("TERM") do
+      SkyRunner.stop_consuming!
+    end
+
     SkyRunner.consume! do |exception|
       if exception
         # TODO customize this with what you want to do if there is an exception.
