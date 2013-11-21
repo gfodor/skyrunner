@@ -143,7 +143,7 @@ module SkyRunner
       end
     end
 
-    threads.each { |t| t.join }
+    threads.each(&:join)
 
     true
   end
