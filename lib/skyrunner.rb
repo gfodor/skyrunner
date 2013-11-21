@@ -63,14 +63,55 @@ module SkyRunner
   def self.consume!(&block)
     queue = sqs_queue
     table = dynamo_db_table
-
     raise "Queue #{SkyRunner::sqs_queue_name} not found. Try running 'skyrunner init'" unless queue
     raise "DynamoDB table #{SkyRunner::dynamo_db_table_name} not found. Try running 'skyrunner init'" unless table && table.exists?
+
+    local_queue = Queue.new
+    error_queue = Queue.new
+
+    threads = []
+
+    1.upto(SkyRunner::num_threads) do
+      threads << Thread.new do
+        sqs = AWS::SQS.new
+
+        loop do
+          break if SkyRunner::stop_consuming?
+          sleep 1 unless local_queue.size > 0
+
+          klass, job_id, task_args, message = local_queue.pop
+
+          SkyRunner::log :info, "Run Task: #{task_args} Job: #{job_id} Message: #{message.id}"
+
+          job = klass.new
+          job.skyrunner_job_id = job_id
+
+          begin
+            job.consume!(task_args)
+            message.delete
+          rescue Exception => e
+            error_queue.push(e)
+            SkyRunner::log :error, "Task Failed: #{task_args} Job: #{job_id} #{e.message} #{e.backtrace.join("\n")}"
+          end
+        end
+      end
+    end
 
     log :info, "Consumer started."
 
     loop do
-      return true if stop_consuming
+      if error_queue.size > 0
+        SkyRunner::stop_consuming!
+
+        while error_queue.size > 0
+          error = error_queue.pop
+          yield error if block_given?
+        end
+      end
+
+      return true if stop_consuming?
+
+      sleep 1 while local_queue.size >= SkyRunner.num_threads
 
       received_messages = []
 
@@ -80,37 +121,19 @@ module SkyRunner
 
       next unless received_messages.size > 0
 
-      failed = false
-
       table.batch_get(:all, received_messages.map { |m| m[1]["job_id"] }.uniq, consistent_read: true) do |record|
         received_messages.select { |m| m[1]["job_id"] == record["job_id"] }.each_with_index do |received_message|
           message = received_message[1]
           job_id = message["job_id"]
 
-          if record["namespace"] == SkyRunner.job_namespace && record["failed"] == 0 && !failed
+          if record["namespace"] == SkyRunner.job_namespace && record["failed"] == 0 && error_queue.size == 0
             start_time = Time.now
 
             begin
               klass = Kernel.const_get(record["class"])
-
               task_args = message["task_args"]
-              log :info, "Run Task: #{task_args} Job: #{job_id}"
-
-              job = klass.new
-              job.skyrunner_job_id = job_id
-
-              begin
-                job.consume!(task_args)
-                received_message[0].delete
-
-                yield false if block_given?
-              rescue Exception => e
-                failed = true
-                log :error, "Task Failed: #{task_args} Job: #{job_id} #{e.message} #{e.backtrace.join("\n")}"
-                yield e if block_given?
-              end
+              local_queue.push([klass, job_id, task_args, received_message[0]])
             rescue NameError => e
-              failed = true
               log :error, "Task Failed: No such class #{record["class"]} #{e.message}"
               yield e if block_given?
             end
@@ -118,6 +141,10 @@ module SkyRunner
         end
       end
     end
+
+    threads.each { |t| t.join }
+
+    true
   end
 
   def self.dynamo_db_table
@@ -165,10 +192,27 @@ module SkyRunner
   mattr_accessor :logger
   @@logger = Log4r::Logger.new("skyrunner")
 
-  mattr_accessor :stop_consuming
+  mattr_accessor :num_threads
+  @@num_threads = 10
 
-  def self.stop_consuming!
-    SkyRunner::stop_consuming = true
+  mattr_accessor :stop_consuming_flag
+
+  @@stop_consuming_mutex = Mutex.new
+
+  def self.stop_consuming?
+    @@stop_consuming_mutex.synchronize do
+      SkyRunner::stop_consuming_flag
+    end
+  end
+
+  def self.stop_consuming!(its_a_trap=false)
+    if its_a_trap
+      SkyRunner::stop_consuming_flag = true
+    else
+      @@stop_consuming_mutex.synchronize do
+        SkyRunner::stop_consuming_flag = true
+      end
+    end
   end
 
   private

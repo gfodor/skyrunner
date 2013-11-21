@@ -67,6 +67,7 @@ module SkyRunner::Job
         1.upto(5) do
           flush.()
           sleep 5 if pending_args.size > 0
+          break if pending_args.size == 0
         end
       end
     end
@@ -74,6 +75,7 @@ module SkyRunner::Job
     1.upto(5) do
       flush.() if pending_args.size > 0
       sleep 5 if pending_args.size > 0
+      break if pending_args.size == 0
     end
 
     handle_task_completed!

@@ -16,4 +16,9 @@ SkyRunner.setup do |config|
   # this should provide sufficient time for a consumer to process 10 tasks, for example. (default 90)
   #
   # config.visibility_timeout = 90
+
+  # Set the number of concurrent threads for the consumer process.
+  # (If greater than one, you obviously need to make sure your tasks are thread-safe.)
+  #
+  # config.num_threads = 10
 end

@@ -7,7 +7,7 @@ namespace :skyrunner do
   desc "Starts consuming SkyRunner tasks."
   task consume: :environment do
     trap("INT") do
-      SkyRunner.stop_consuming!
+      SkyRunner.stop_consuming!(true)
     end
 
     SkyRunner.consume! do |exception|

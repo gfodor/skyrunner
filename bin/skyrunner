@@ -12,7 +12,7 @@ logger.level = Log4r::DEBUG
 SkyRunner.logger = logger
 
 trap("INT") do
-  SkyRunner.stop_consuming!
+  SkyRunner.stop_consuming!(true)
 end
 
 opts = Trollop::options do
@@ -25,6 +25,7 @@ opts = Trollop::options do
       Valid commands:
 
       consume - Starts consuming tasks.
+      test - Runs a test job.
       init - Creates DynamoDB table and SQS queue for SkyRunner.
       purge - Purges and re-creates DynamoDB table and SQS queue for SkyRunner. (Destructive!)
   END
@@ -33,14 +34,16 @@ opts = Trollop::options do
   opt :sqs_queue_name, "SQS queue use for tasks.", default: "skyrunner_tasks", type: :string
   opt :namespace, "Namespace of jobs to consume.", default: "default", type: :string
   opt :batch_size, "Number of tasks to consume per batch.", default: 10
+  opt :num_threads, "Number of consumer threads.", default: 10
 end
 
 SkyRunner.dynamo_db_table_name = opts[:dynamo_db_table_name]
 SkyRunner.sqs_queue_name = opts[:sqs_queue_name]
 SkyRunner.job_namespace = opts[:namespace]
 SkyRunner.consumer_batch_size = opts[:batch_size].to_i
+SkyRunner.num_threads = opts[:num_threads].to_i
 
-COMMANDS = ["init", "purge", "consume"]
+COMMANDS = ["init", "purge", "consume", "test"]
 
 Trollop::die "Must specify command" unless COMMANDS.include?(ARGV[0])
 
@@ -52,5 +55,10 @@ when "init"
 when "purge"
   SkyRunner.init!(purge: true)
 when "consume"
+  SkyRunner.consume!
+when "test"
+  $: << "."
+  require "#{File.dirname(__FILE__)}/../jobs/example_job"
+  ExampleJobModule::ExampleJob.new.execute!(number_of_tasks: 500)
   SkyRunner.consume!
 end
