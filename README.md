@@ -33,5 +33,5 @@ bundle exec rake skyrunner:consume
 
 See `jobs/example_job.rb` for an example job. To run a job, just call `execute!` on the job, passing any named job arguments you want. The job class should implement the method `run`. This method will get passed the job arguments. For each task you want consumers to run, `run` should yield an array of two elements, the first being the name of the method on the job class to run for the task, and the second a Hash of method arguments.
 
-You can specify `on_complete` and `on_failure` methods to call when the tasks are all completed, or if any of them fail, respectively. These methods will also be passed the original job arguments.
+You can specify `on_complete` and `on_failure` methods to call when the tasks are all completed, or if any of them fail, respectively. These methods will also be passed the original job arguments. Importantly, the completion method is guaranteed to be called once and only once, when the final task has been completed.
 
