@@ -19,7 +19,7 @@ module SkyRunner
       # Generator Code. Remember this is just suped-up Thor so methods are executed in order
 
       def create_initializer_file
-        copy_file "config/initializers/skyrunner.rb", "config/initializers/skyrunner.rb"
+        copy_file "skyrunner.rb", "config/initializers/skyrunner.rb"
       end
     end
   end
