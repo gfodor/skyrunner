@@ -1,10 +1,10 @@
 namespace :skyrunner do
-  desc "Starts consuming SkyRunner tasks."
+  desc "Creates DynamoDB table and SQS queue for SkyRunner."
   task init: :environment do
     SkyRunner.init!
   end
 
-  desc "Creates DynamoDB table and SQS queue for SkyRunner."
+  desc "Starts consuming SkyRunner tasks."
   task consume: :environment do
     SkyRunner.consume! do |exception|
       if exception
