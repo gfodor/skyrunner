@@ -138,6 +138,8 @@ module SkyRunner
               log :error, "Task Failed: No such class #{record["class"]} #{e.message}"
               yield e if block_given?
             end
+          else
+            message.delete
           end
         end
       end
