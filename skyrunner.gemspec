@@ -21,8 +21,8 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "bundler", "~> 1.3"
   spec.add_development_dependency "rake"
 
-  gem.add_runtime_dependency "aws-sdk"
-  gem.add_runtime_dependency "activesupport", "~> 4.0"
-  gem.add_runtime_dependency "log4r"
-  gem.add_runtime_dependency "trollop"
+  spec.add_runtime_dependency "aws-sdk"
+  spec.add_runtime_dependency "activesupport", "~> 4.0"
+  spec.add_runtime_dependency "log4r"
+  spec.add_runtime_dependency "trollop"
 end
