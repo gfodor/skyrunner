@@ -13,10 +13,10 @@ logger.level = Log4r::DEBUG
 SkyRunner.logger = logger
 
 SkyRunner.setup do |config|
-  config.dynamodb_table = "skyrunner_jobs_development"
-  config.sqs_queue = "skyrunner_tasks_development"
+  config.dynamo_db_table_name = "skyrunner_jobs_development"
+  config.sqs_queue_name = "skyrunner_tasks_development"
 end
 
 SkyRunner.init!
-
-j = ExampleJob.new
+ExampleJobModule::ExampleJob.new.execute!(number_of_tasks: 7)
+SkyRunner.consume!
