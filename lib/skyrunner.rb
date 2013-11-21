@@ -73,8 +73,6 @@ module SkyRunner
 
     1.upto(SkyRunner::num_threads) do
       threads << Thread.new do
-        sqs = AWS::SQS.new
-
         loop do
           break if SkyRunner::stop_consuming?
           sleep 1 unless local_queue.size > 0
