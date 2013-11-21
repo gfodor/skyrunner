@@ -19,13 +19,17 @@ bundle exec rails g sky_runner:install
 
 Customize `config/initializers/skyrunner.rb`. Update `lib/tasks/skyrunner.rake` to do what you want if there are exceptions during a task.
 
+Put your AWS keys in the usual environment variables `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. If you are running on EC2, you don't need to do this and SkyRunner will run within the machine's IAM role.
+
+Be sure the IAM permissions are granted to create DynamoDB tables and queues, and to perform all read and write operations to the table and queue you've configured for SkyRunner.
+
 To initialize DynamoDB & SQS:
 
 ``
 bundle exec rake skyrunner:init
 ``
 
-To start a consumer
+To start a consumer:
 
 ``
 bundle exec rake skyrunner:consume
