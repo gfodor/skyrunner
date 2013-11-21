@@ -25,4 +25,5 @@ Gem::Specification.new do |spec|
   spec.add_runtime_dependency "activesupport", "~> 4.0"
   spec.add_runtime_dependency "log4r"
   spec.add_runtime_dependency "trollop"
+  spec.add_runtime_dependency "retries"
 end
