@@ -21,6 +21,10 @@ module SkyRunner
       def create_initializer_file
         copy_file "skyrunner.rb", "config/initializers/skyrunner.rb"
       end
+
+      def create_rake_tasks
+        copy_file "skyrunner.rake", "lib/tasks/skyrunner.rake"
+      end
     end
   end
 end

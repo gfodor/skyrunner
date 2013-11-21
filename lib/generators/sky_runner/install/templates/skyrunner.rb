@@ -1,4 +1,6 @@
 SkyRunner.setup do |config|
+  config.logger = Rails.logger
+
   # Customize these to change the name of the table & queue used for job and task management.
   config.dynamo_db_table_name = "skyrunner_jobs_#{Rails.env}"
   config.sqs_queue_name = "skyrunner_tasks_#{Rails.env}"
