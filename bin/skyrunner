@@ -17,6 +17,14 @@ SkyRunner.setup do |config|
   config.sqs_queue_name = "skyrunner_tasks_development"
 end
 
-SkyRunner.init!
 ExampleJobModule::ExampleJob.new.execute!(number_of_tasks: 7)
+
+trap("INT") do
+  SkyRunner.stop_consuming!
+end
+
+trap("TERM") do
+  SkyRunner.stop_consuming!
+end
+
 SkyRunner.consume!

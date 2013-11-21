@@ -58,12 +58,12 @@ module SkyRunner
   end
 
   def self.consume!(&block)
-    self.init!
-
     queue = sqs_queue
     table = dynamo_db_table
 
     loop do
+      return true if stop_consuming
+
       received_messages = []
 
       queue.receive_messages(limit: [1, [SkyRunner.consumer_batch_size, SQS_MAX_BATCH_SIZE].min].max, wait_time_seconds: 15) do |message|
@@ -75,7 +75,11 @@ module SkyRunner
       failed = false
 
       table.batch_get(:all, received_messages.map { |m| m[1]["job_id"] }.uniq, consistent_read: true) do |record|
+        break if stop_consuming
+
         received_messages.select { |m| m[1]["job_id"] == record["job_id"] }.each_with_index do |received_message|
+          break if stop_consuming
+
           message = received_message[1]
           job_id = message["job_id"]
 
@@ -114,7 +118,7 @@ module SkyRunner
 
   def self.dynamo_db_table
     dynamo_db.tables[SkyRunner.dynamo_db_table_name].tap do |table|
-      table.load_schema
+      table.load_schema if table && table.exists?
     end
   end
 
@@ -156,6 +160,12 @@ module SkyRunner
 
   mattr_accessor :logger
   @@logger = Log4r::Logger.new("skyrunner")
+
+  mattr_accessor :stop_consuming
+
+  def self.stop_consuming!
+    SkyRunner::stop_consuming = true
+  end
 
   private
 
