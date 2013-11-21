@@ -123,17 +123,17 @@ module SkyRunner
       next unless received_messages.size > 0
 
       table.batch_get(:all, received_messages.map { |m| m[1]["job_id"] }.uniq, consistent_read: true) do |record|
-        received_messages.select { |m| m[1]["job_id"] == record["job_id"] }.each_with_index do |received_message|
-          message = received_message[1]
-          job_id = message["job_id"]
+        received_messages.select { |m| m[1]["job_id"] == record["job_id"] }.each do |received_message|
+          message, message_data = received_message
+          job_id = message_data["job_id"]
 
           if record["namespace"] == SkyRunner.job_namespace && record["failed"] == 0 && error_queue.size == 0
             start_time = Time.now
 
             begin
               klass = Kernel.const_get(record["class"])
-              task_args = message["task_args"]
-              local_queue.push([klass, job_id, task_args, received_message[0]])
+              task_args = message_data["task_args"]
+              local_queue.push([klass, job_id, task_args, message])
             rescue NameError => e
               log :error, "Task Failed: No such class #{record["class"]} #{e.message}"
               yield e if block_given?
