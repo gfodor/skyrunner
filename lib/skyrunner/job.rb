@@ -111,6 +111,8 @@ module SkyRunner::Job
           self.send(method, JSON.parse(record.attributes["args"]).symbolize_keys)
         end
       end
+
+      delete_task_records! rescue nil
     rescue Exception => e
     end
   end
@@ -137,61 +139,66 @@ module SkyRunner::Job
             self.send(method, JSON.parse(record.attributes["args"]).symbolize_keys)
           end
         end
-
-        # Delete task items
-        delete_batch_queue = Queue.new
-        mutex = Mutex.new
-        delete_items_queued = false
-        threads = []
-
-        1.upto(SkyRunner.num_threads) do 
-          threads << Thread.new do
-            db_table = SkyRunner.dynamo_db_table
-
-            loop do
-              should_break = false
-
-              mutex.synchronize do
-                should_break = (SkyRunner::stop_consuming? || delete_items_queued) && delete_batch_queue.empty?
-              end
-
-              break if should_break
-
-              batch = delete_batch_queue.pop
-
-              if batch
-                db_table.batch_delete(batch)
-              else
-                sleep 1
-              end
-            end
-          end
-        end
-
-        items_to_delete = []
-        table = SkyRunner.dynamo_db_table
-
-        table.items.query(hash_value: "#{record.attributes["id"]}-tasks", select: [:id, :task_id]) do |task_item|
-          items_to_delete << [task_item.attributes["id"], task_item.attributes["task_id"]]
-
-          if items_to_delete.size >= 25
-            delete_batch_queue << items_to_delete
-            items_to_delete = []
-          end
-        end
-
-        delete_batch_queue << items_to_delete unless items_to_delete.empty?
-        
-        mutex.synchronize do
-          delete_items_queued = true
-        end
-
-        threads.each(&:join)
       rescue AWS::DynamoDB::Errors::ConditionalCheckFailedException => e
         # This is OK, we had a double finisher so lets block them.
       end
     end
 
+    delete_task_records! rescue nil
+
     true
+  end
+
+  def delete_task_records!
+    # Delete task items
+    delete_batch_queue = Queue.new
+    mutex = Mutex.new
+    delete_items_queued = false
+    threads = []
+
+    1.upto(SkyRunner.num_threads) do 
+      threads << Thread.new do
+
+        db_table = SkyRunner.dynamo_db_table
+
+        loop do
+          should_break = false
+
+          mutex.synchronize do
+            should_break = (SkyRunner::stop_consuming? || delete_items_queued) && delete_batch_queue.empty?
+          end
+
+          break if should_break
+
+          batch = delete_batch_queue.pop
+
+          if batch
+            db_table.batch_delete(batch)
+          else
+            sleep 1
+          end
+        end
+      end
+    end
+
+    items_to_delete = []
+    table = SkyRunner.dynamo_db_table
+
+    table.items.query(hash_value: "#{self.skyrunner_job_id}-tasks", select: [:id, :task_id]) do |task_item|
+      items_to_delete << [task_item.attributes["id"], task_item.attributes["task_id"]]
+
+      if items_to_delete.size >= 25
+        delete_batch_queue << items_to_delete
+        items_to_delete = []
+      end
+    end
+
+    delete_batch_queue << items_to_delete unless items_to_delete.empty?
+    
+    mutex.synchronize do
+      delete_items_queued = true
+    end
+
+    threads.each(&:join)
   end
 end
