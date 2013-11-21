@@ -90,6 +90,7 @@ module SkyRunner
               job.consume!(task_args)
               message.delete
             rescue Exception => e
+              message.delete rescue nil
               error_queue.push(e)
               SkyRunner::log :error, "Task Failed: #{task_args} Job: #{job_id} #{e.message} #{e.backtrace.join("\n")}"
             end
@@ -135,6 +136,7 @@ module SkyRunner
               task_args = message_data["task_args"]
               local_queue.push([klass, job_id, task_args, message])
             rescue NameError => e
+              message.delete rescue nil
               log :error, "Task Failed: No such class #{record["class"]} #{e.message}"
               yield e if block_given?
             end

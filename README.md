@@ -41,3 +41,5 @@ See `jobs/example_job.rb` for an example job. To run a job, just call `execute!`
 
 You can specify `on_complete` and `on_failure` method(s) to call when the tasks are all completed, or if any of them fail, respectively. These methods will also be passed the original job arguments. Importantly, the completion method is guaranteed to be called once and only once, when the final task has been completed.
 
+If any of your tasks fail in a job, consumers will stop consuming tasks for that job and deplete any queued tasks on SQS. SkyRunner does not currently retry failed tasks, for now you'll need to implement your own retry logic in your task method instead.
+
