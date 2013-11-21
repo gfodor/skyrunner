@@ -61,6 +61,11 @@ module SkyRunner
     queue = sqs_queue
     table = dynamo_db_table
 
+    raise "Queue #{SkyRunner::sqs_queue_name} not found. Try running 'skyrunner init'" unless queue
+    raise "DynamoDB table #{SkyRunner::dynamo_db_table_name} not found. Try running 'skyrunner init'" unless table && table.exists?
+
+    log :info, "Consumer started."
+
     loop do
       return true if stop_consuming
 
@@ -90,7 +95,7 @@ module SkyRunner
               klass = Kernel.const_get(record["class"])
 
               task_args = message["task_args"]
-              SkyRunner.logger.info "Run Task: #{task_args} Job: #{job_id}"
+              log :info, "Run Task: #{task_args} Job: #{job_id}"
 
               job = klass.new
               job.skyrunner_job_id = job_id
@@ -102,12 +107,12 @@ module SkyRunner
                 yield false if block_given?
               rescue Exception => e
                 failed = true
-                SkyRunner.logger.error "Task Failed: #{task_args} Job: #{job_id} #{e.message} #{e.backtrace.join("\n")}"
+                log :error, "Task Failed: #{task_args} Job: #{job_id} #{e.message} #{e.backtrace.join("\n")}"
                 yield e if block_given?
               end
             rescue NameError => e
               failed = true
-              SkyRunner.logger.error "Task Failed: No such class #{record["class"]} #{e.message}"
+              log :error, "Task Failed: No such class #{record["class"]} #{e.message}"
               yield e if block_given?
             end
           end
