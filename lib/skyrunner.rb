@@ -74,7 +74,7 @@ module SkyRunner
     1.upto(SkyRunner::num_threads) do
       threads << Thread.new do
         loop do
-          break if SkyRunner::stop_consuming? && local_queue.size == 0
+          break if SkyRunner::stop_consuming? && local_queue.empty?
 
           sleep 1 unless local_queue.size > 0
 
@@ -127,7 +127,9 @@ module SkyRunner
           message, message_data = received_message
           job_id = message_data["job_id"]
 
-          if record["namespace"] == SkyRunner.job_namespace && record["failed"] == 0 && error_queue.size == 0
+          if record["namespace"] == SkyRunner.job_namespace && 
+             record["failed"] == 0 && 
+             error_queue.empty?
             start_time = Time.now
 
             begin
