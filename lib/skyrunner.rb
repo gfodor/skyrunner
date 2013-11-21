@@ -130,8 +130,6 @@ module SkyRunner
           if record["namespace"] == SkyRunner.job_namespace && 
              record["failed"] == 0 && 
              error_queue.empty?
-            start_time = Time.now
-
             begin
               klass = Kernel.const_get(record["class"])
               task_args = message_data["task_args"]
