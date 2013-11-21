@@ -7,6 +7,8 @@ require "json"
 require "set"
 
 module SkyRunner
+  require "skyrunner/engine" if defined?(Rails)
+
   SQS_MAX_BATCH_SIZE = 10 # Constant defined by AWS
 
   def self.setup
