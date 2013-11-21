@@ -15,10 +15,6 @@ trap("INT") do
   SkyRunner.stop_consuming!
 end
 
-trap("TERM") do
-  SkyRunner.stop_consuming!
-end
-
 opts = Trollop::options do
   banner <<-END
   Runs logical jobs (made up of tasks) coordinated via AWS SQS & DynamoDB.

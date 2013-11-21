@@ -10,10 +10,6 @@ namespace :skyrunner do
       SkyRunner.stop_consuming!
     end
 
-    trap("TERM") do
-      SkyRunner.stop_consuming!
-    end
-
     SkyRunner.consume! do |exception|
       if exception
         # TODO customize this with what you want to do if there is an exception.

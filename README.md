@@ -31,7 +31,7 @@ To start a consumer
 bundle exec rake skyrunner:consume
 ``
 
-To gracefully shut down a consumer, send it SIGINT or SIGTERM. It will finish up processing the messages it has de-queued before terminating.
+To gracefully shut down a consumer, send it SIGINT. It will finish up processing the messages it has de-queued before terminating.
 
 See `jobs/example_job.rb` for an example job. To run a job, just call `execute!` on the job, passing any named job arguments you want. The job class should implement the method `run`. This method will get passed the job arguments. For each task you want consumers to run, `run` should yield an array of two elements, the first being the name of the method on the job class to run for the task, and the second a Hash of method arguments.
 
