@@ -1,7 +1,7 @@
 SkyRunner
 =========
 
-SkyRunner is a simple job execution framework that lets you run jobs which are composed of small tasks using AWS SQS and DynamoDB for queueing and job coordination. 
+SkyRunner is a simple job execution framework that lets you run jobs which are composed of small tasks. SkyRunner uses AWS SQS and DynamoDB for queueing and job coordination, so you don't need any servers other than your task consumers to run jobs. 
 
 The key feature provided is that once a job's last task completes, a completion method can be called so you can perform a post-processing step. For example, you may run a job that has 100 tasks that process image frames in parallel, and then when these tasks are completed you compose the frames into a video and upload it to S3.
 
