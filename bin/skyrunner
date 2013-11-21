@@ -32,14 +32,12 @@ opts = Trollop::options do
 
   opt :dynamo_db_table_name, "DynamoDB table to use for job state.", default: "skyrunner_jobs", type: :string
   opt :sqs_queue_name, "SQS queue use for tasks.", default: "skyrunner_tasks", type: :string
-  opt :namespace, "Namespace of jobs to consume.", default: "default", type: :string
   opt :batch_size, "Number of tasks to consume per batch.", default: 10
   opt :num_threads, "Number of consumer threads.", default: 10
 end
 
 SkyRunner.dynamo_db_table_name = opts[:dynamo_db_table_name]
 SkyRunner.sqs_queue_name = opts[:sqs_queue_name]
-SkyRunner.job_namespace = opts[:namespace]
 SkyRunner.consumer_batch_size = opts[:batch_size].to_i
 SkyRunner.num_threads = opts[:num_threads].to_i
 

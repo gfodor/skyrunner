@@ -34,7 +34,7 @@ module SkyRunner::Job
     table = SkyRunner.dynamo_db_table
     queue = SkyRunner.sqs_queue
 
-    record = table.items.put(job_id: job_id, namespace: SkyRunner.job_namespace, class: self.class.name, args: args.to_json, total_tasks: 1, completed_tasks: 0, done: 0, failed: 0)
+    record = table.items.put(job_id: job_id, class: self.class.name, args: args.to_json, total_tasks: 1, completed_tasks: 0, done: 0, failed: 0)
 
     pending_args = []
 

@@ -129,9 +129,7 @@ module SkyRunner
           message, message_data = received_message
           job_id = message_data["job_id"]
 
-          if record["namespace"] == SkyRunner.job_namespace && 
-             record["failed"] == 0 && 
-             error_queue.empty?
+          if record["failed"] == 0 && error_queue.empty?
             begin
               klass = Kernel.const_get(record["class"])
               task_args = message_data["task_args"]
@@ -185,9 +183,6 @@ module SkyRunner
 
   mattr_accessor :sqs_message_retention_period
   @@sqs_message_retention_period = 345600
-
-  mattr_accessor :job_namespace
-  @@job_namespace = "default"
 
   mattr_accessor :consumer_batch_size
   @@consumer_batch_size = 10

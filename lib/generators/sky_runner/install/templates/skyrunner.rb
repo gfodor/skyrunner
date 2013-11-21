@@ -5,9 +5,6 @@ SkyRunner.setup do |config|
   config.dynamo_db_table_name = "skyrunner_jobs_#{Rails.env}"
   config.sqs_queue_name = "skyrunner_tasks_#{Rails.env}"
 
-  # Customzie this to change the namespace of jobs enqueued and consumed by this application.
-  config.job_namespace = Rails.application.class.parent_name.underscore
-
   # Set the number of tasks for a consumer to pull and run from SQS at a time. (Max 10, default 10)
   #
   # config.consumer_batch_size = 10
