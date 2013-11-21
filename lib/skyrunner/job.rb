@@ -53,7 +53,7 @@ module SkyRunner::Job
         if messages.size > 1
           SkyRunner::retry_dynamo_db do
             table = SkyRunner.dynamo_db_table
-            record = table.items.put(id: job_id, task_id: job_id, class: self.class.name, args: job_args.to_json, total_tasks: 1, completed_tasks: 0, done: 0, failed: 0)
+            record = table.items.put(id: job_id, created_at: Time.now.to_s, task_id: job_id, class: self.class.name, args: job_args.to_json, total_tasks: 1, completed_tasks: 0, done: 0, failed: 0)
           end
         else
           fired_solo = true
@@ -173,6 +173,7 @@ module SkyRunner::Job
           SkyRunner::retry_dynamo_db do
             record.attributes.update(if: if_condition) do |u|
               u.add(done: 1)
+              u.set(completed_at: Time.now.to_s)
             end
           end
         end
