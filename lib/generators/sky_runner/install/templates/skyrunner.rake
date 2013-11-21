@@ -6,7 +6,12 @@ namespace :skyrunner do
 
   desc "Creates DynamoDB table and SQS queue for SkyRunner."
   task consume: :environment do
-    SkyRunner.consume!
+    SkyRunner.consume! do |exception|
+      if exception
+        # TODO customize this with what you want to do if there is an exception.
+        # (For example, send to Airbrake.)
+      end
+    end
   end
 
   desc "Purges and re-creates DynamoDB table and SQS queue for SkyRunner. (Warning: destructive!)"

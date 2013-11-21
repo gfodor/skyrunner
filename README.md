@@ -17,7 +17,7 @@ To set up with Rails:
 bundle exec rails g sky_runner:install
 ```
 
-And customize `config/initializers/skyrunner.rb`
+Customize `config/initializers/skyrunner.rb`. Update `lib/tasks/skyrunner.rake` to do what you want if there are exceptions during a task.
 
 To initialize DynamoDB & SQS:
 
