@@ -83,23 +83,26 @@ module SkyRunner
               next
             end
 
-            klass, job_id, task_id, task_args, message = local_queue.pop
+            klass, job_id, task_id, job_args, task_args, is_solo, message = local_queue.pop
 
             if klass
               begin
-                # Avoid running the same task twice, enter record and raise error if exists already.
+                unless is_solo
+                  # Avoid running the same task twice, enter record and raise error if exists already.
 
-                SkyRunner::retry_dynamo_db do
-                  table.items.put({ id: "#{job_id}-tasks", task_id: task_id }, unless_exists: ["id", "task_id"])
+                  SkyRunner::retry_dynamo_db do
+                    table.items.put({ id: "#{job_id}-tasks", task_id: task_id }, unless_exists: ["id", "task_id"])
+                  end
                 end
 
                 SkyRunner::log :info, "Run Task: #{task_args} Job: #{job_id} Message: #{message.id}"
 
                 job = klass.new
                 job.skyrunner_job_id = job_id
+                job.skyrunner_job_is_solo = is_solo
 
                 begin
-                  job.consume!(task_args)
+                  job.consume!(job_args, task_args)
                   message.delete
                 rescue Exception => e
                   message.delete rescue nil
@@ -138,14 +141,16 @@ module SkyRunner
 
             next unless received_messages.size > 0
 
-            job_ids = received_messages.map { |m| [m[1]["job_id"], m[1]["job_id"]] }.uniq
+            job_ids = received_messages.select { |m| !m[1]["is_solo"] }.map { |m| [m[1]["job_id"], m[1]["job_id"]] }.uniq
 
             job_records = {}
 
-            SkyRunner::retry_dynamo_db do
-              # Read DynamoDB records into job and task lookup tables.
-              table.batch_get(["id", "task_id", "failed"], job_ids.uniq, consistent_read: true) do |record|
-                job_records[record["id"]] = record
+            if job_ids.uniq.size > 0
+              SkyRunner::retry_dynamo_db do
+                # Read DynamoDB records into job and task lookup tables.
+                table.batch_get(["id", "task_id", "failed"], job_ids.uniq, consistent_read: true) do |record|
+                  job_records[record["id"]] = record
+                end
               end
             end
 
@@ -153,14 +158,16 @@ module SkyRunner
               message, message_data = received_message
               job_id = message_data["job_id"]
               task_id = message_data["task_id"]
+              is_solo = message_data["is_solo"]
+              job_args = message_data["job_args"]
+              task_args = message_data["task_args"]
 
               job_record = job_records[job_id]
 
-              if job_record && job_record["failed"] == 0
+              if is_solo || (job_record && job_record["failed"] == 0)
                 begin
                   klass = Kernel.const_get(message_data["job_class"])
-                  task_args = message_data["task_args"]
-                  local_queue.push([klass, job_id, task_id, task_args, message])
+                  local_queue.push([klass, job_id, task_id, job_args, task_args, is_solo, message])
                 rescue NameError => e
                   block.call(e) if block_given?
                   message.delete rescue nil
@@ -187,8 +194,12 @@ module SkyRunner
   end
 
   def self.dynamo_db_table
+    table = Thread.current.thread_variable_get(:skyrunner_dyn_table)
+    return table if table 
+
     dynamo_db.tables[SkyRunner.dynamo_db_table_name].tap do |table|
       table.load_schema if table && table.exists?
+      Thread.current.thread_variable_set(:skyrunner_dyn_table, table)
     end
   end
 

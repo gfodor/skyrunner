@@ -56,6 +56,14 @@ when "consume"
 when "test"
   $: << "."
   require "#{File.dirname(__FILE__)}/../jobs/example_job"
-  ExampleJobModule::ExampleJob.new.execute!(number_of_tasks: 1000)
+
+  # Solo job, does not use DynamoDB for coordination.
+  1.upto(10) do |n|
+    ExampleJobModule::ExampleJob.new.execute!(number_of_tasks: 1)
+  end
+
+  # Batch job, uses DynamoDB to coordinate
+  ExampleJobModule::ExampleJob.new.execute!(number_of_tasks: 100)
+
   SkyRunner.consume!
 end
