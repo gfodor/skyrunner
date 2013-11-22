@@ -153,6 +153,7 @@ module SkyRunner::Job
         task.send(task_args[0].to_sym, task_args[1].symbolize_keys)
       rescue Exception => e
         task.fire_post_event_method(:failed, job_args)
+        raise e
         break
       end
 
