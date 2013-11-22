@@ -7,11 +7,11 @@ module SkyRunner::Job
   end
 
   module ClassMethods
-    def on_completed(methods)
+    def on_completed(*methods)
       add_job_event_methods(methods, :completed)
     end
 
-    def on_failed(methods)
+    def on_failed(*methods)
       add_job_event_methods(methods, :failed)
     end
 
