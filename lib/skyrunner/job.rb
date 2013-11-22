@@ -33,6 +33,8 @@ module SkyRunner::Job
   end
 
   def execute!(job_args = {})
+    return execute_local!(job_args) if SkyRunner::run_locally
+
     job_id = SecureRandom.hex
     self.skyrunner_job_id = job_id
 
@@ -120,7 +122,45 @@ module SkyRunner::Job
     end
   end
 
+  def fire_post_event_method(event_type, job_args)
+    (self.class.job_event_methods[event_type] || []).each do |method|
+      if self.method(method).arity == 0 && self.method(method).parameters.size == 0
+        self.send(method)
+      else
+        self.send(method, job_args.symbolize_keys)
+      end
+    end
+  end
+
   private 
+
+  def execute_local!(job_args = {})
+    job_id = SecureRandom.hex
+    self.skyrunner_job_id = job_id
+    task_arg_list = []
+
+    self.run(job_args) do |*task_args|
+      task_arg_list << task_args
+    end
+
+    task_arg_list.shuffle!
+
+    task_arg_list.each_with_index do |task_args, task_index|
+      task = self.class.new
+      task.skyrunner_job_id = job_id
+
+      begin
+        task.send(task_args[0].to_sym, task_args[1].symbolize_keys)
+      rescue Exception => e
+        task.fire_post_event_method(:failed, job_args)
+        break
+      end
+
+      if task_index == task_arg_list.size - 1
+        task.fire_post_event_method(:completed, job_args)
+      end
+    end
+  end
 
   def dynamo_db_record
     SkyRunner.dynamo_db_table.items[self.skyrunner_job_id, self.skyrunner_job_id]
@@ -138,13 +178,7 @@ module SkyRunner::Job
         end
       end
 
-      (self.class.job_event_methods[:failed] || []).each do |method|
-        if self.method(method).arity == 0 && self.method(method).parameters.size == 0
-          self.send(method)
-        else
-          self.send(method, job_args.symbolize_keys)
-        end
-      end
+      self.fire_post_event_method(:failed, job_args)
 
       unless is_solo?
         delete_task_records! rescue nil
@@ -178,13 +212,7 @@ module SkyRunner::Job
           end
         end
 
-        (self.class.job_event_methods[:completed] || []).each do |method|
-          if self.method(method).arity == 0 && self.method(method).parameters.size == 0
-            self.send(method)
-          else
-            self.send(method, job_args.symbolize_keys)
-          end
-        end
+        self.fire_post_event_method(:completed, job_args)
 
         unless is_solo?
           delete_task_records! rescue nil
@@ -205,7 +233,7 @@ module SkyRunner::Job
     delete_items_queued = false
     threads = []
 
-    1.upto([1, (SkyRunner.consumer_threads / 4.0).floor].max) do 
+    1.upto([1, (SkyRunner::consumer_threads / 4.0).floor].max) do 
       threads << Thread.new do
 
         db_table = SkyRunner.dynamo_db_table

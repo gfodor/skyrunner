@@ -20,7 +20,7 @@ module SkyRunner
     table = self.dynamo_db_table
 
     if !table.exists? || params[:purge]
-      table_name = SkyRunner.dynamo_db_table_name
+      table_name = SkyRunner::dynamo_db_table_name
 
       if table.exists? && params[:purge]
         SkyRunner.log :warn, "Purging DynamoDB table #{table_name}."
@@ -32,8 +32,8 @@ module SkyRunner
       SkyRunner.log :info, "Creating DynamoDB table #{table_name}."
 
       table = dynamo_db.tables.create(table_name, 
-                                     SkyRunner.dynamo_db_read_capacity, 
-                                     SkyRunner.dynamo_db_write_capacity,
+                                     SkyRunner::dynamo_db_read_capacity, 
+                                     SkyRunner::dynamo_db_write_capacity,
                                      hash_key: { id: :string },
                                      range_key: { task_id: :string })
 
@@ -43,7 +43,7 @@ module SkyRunner
     queue = self.sqs_queue
 
     if !queue || params[:purge]
-      queue_name = SkyRunner.sqs_queue_name
+      queue_name = SkyRunner::sqs_queue_name
 
       if queue && params[:purge]
         SkyRunner.log :warn, "Purging SQS queue #{queue_name}. Waiting 65 seconds to re-create."
@@ -55,8 +55,8 @@ module SkyRunner
       SkyRunner.log :info, "Creating SQS queue #{queue_name}."
 
       queue = sqs.queues.create(queue_name, 
-                                visibility_timeout: SkyRunner.sqs_visibility_timeout,
-                                message_retention_period: SkyRunner.sqs_message_retention_period)
+                                visibility_timeout: SkyRunner::sqs_visibility_timeout,
+                                message_retention_period: SkyRunner::sqs_message_retention_period)
     end
 
     true
@@ -131,7 +131,7 @@ module SkyRunner
 
             break if SkyRunner::stop_consuming?
 
-            sleep 1 while local_queue.size >= SkyRunner.consumer_threads
+            sleep 1 while local_queue.size >= SkyRunner::consumer_threads
 
             received_messages = []
 
@@ -197,7 +197,7 @@ module SkyRunner
     table = Thread.current.thread_variable_get(:skyrunner_dyn_table)
     return table if table 
 
-    dynamo_db.tables[SkyRunner.dynamo_db_table_name].tap do |table|
+    dynamo_db.tables[SkyRunner::dynamo_db_table_name].tap do |table|
       table.load_schema if table && table.exists?
       Thread.current.thread_variable_set(:skyrunner_dyn_table, table)
     end
@@ -205,14 +205,14 @@ module SkyRunner
 
   def self.sqs_queue
     begin
-      sqs.queues.named(SkyRunner.sqs_queue_name)
+      sqs.queues.named(SkyRunner::sqs_queue_name)
     rescue AWS::SQS::Errors::NonExistentQueue => e
       return nil
     end
   end
 
   def self.log(type, message)
-    SkyRunner.logger.send(type, "[SkyRunner] #{message}")
+    SkyRunner::logger.send(type, "[SkyRunner] #{message}")
   end
 
   mattr_accessor :dynamo_db_table_name
@@ -238,6 +238,9 @@ module SkyRunner
 
   mattr_accessor :consumer_threads
   @@consumer_threads = 10
+
+  mattr_accessor :run_locally
+  @@run_locally = false
 
   mattr_accessor :stop_consuming_flag
 

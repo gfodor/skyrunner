@@ -36,11 +36,11 @@ opts = Trollop::options do
   opt :num_threads, "Number of consumer threads.", default: 10
 end
 
-SkyRunner.dynamo_db_table_name = opts[:dynamo_db_table_name]
-SkyRunner.sqs_queue_name = opts[:sqs_queue_name]
-SkyRunner.consumer_threads = opts[:num_threads].to_i
+SkyRunner::dynamo_db_table_name = opts[:dynamo_db_table_name]
+SkyRunner::sqs_queue_name = opts[:sqs_queue_name]
+SkyRunner::consumer_threads = opts[:num_threads].to_i
 
-COMMANDS = ["init", "purge", "consume", "test"]
+COMMANDS = ["init", "purge", "consume", "test", "test_local"]
 
 Trollop::die "Must specify command" unless COMMANDS.include?(ARGV[0])
 
@@ -53,6 +53,12 @@ when "purge"
   SkyRunner.init!(purge: true)
 when "consume"
   SkyRunner.consume!
+when "test_local"
+  $: << "."
+  require "#{File.dirname(__FILE__)}/../jobs/example_job"
+
+  SkyRunner.run_locally = true
+  ExampleJobModule::ExampleJob.new.execute!(number_of_tasks: 100)
 when "test"
   $: << "."
   require "#{File.dirname(__FILE__)}/../jobs/example_job"
