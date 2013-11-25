@@ -140,7 +140,7 @@ module SkyRunner::Job
     task_arg_list = []
 
     self.run(job_args) do |*task_args|
-      task_arg_list << task_args
+      task_arg_list << task_args.deep_dup
     end
 
     task_arg_list.shuffle!
